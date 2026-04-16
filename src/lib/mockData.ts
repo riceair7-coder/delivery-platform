@@ -15,13 +15,17 @@ const packages: Package[] = [
   { id: 'pkg_005', trackingNumber: 'DL20260319005', recipientName: '한소연', recipientPhone: '010-6789-0123', address: '서울시 마포구 성미산로 153', addressDetail: '501호', lat: 37.5583, lng: 126.9171, weight: 0.5, volume: 200, pinCode: '4521' },
 ];
 
+// SSR/CSR hydration 불일치 방지를 위해 고정 기준 시간 사용
+const BASE_TIME = '2026-04-15T09:00:00+09:00';
+const baseMs = new Date(BASE_TIME).getTime();
+
 export const mockDeliveries: DeliveryItem[] = packages.map((pkg, index) => ({
   id: `del_${String(index + 1).padStart(3, '0')}`,
   package: pkg,
   status: (index === 0 ? 'completed' : index === 1 ? 'in_progress' : 'pending') as DeliveryItem['status'],
   order: index + 1,
-  estimatedArrival: new Date(Date.now() + (index + 1) * 20 * 60 * 1000).toISOString(),
-  completedAt: index === 0 ? new Date(Date.now() - 30 * 60 * 1000).toISOString() : undefined,
+  estimatedArrival: new Date(baseMs + (index + 1) * 20 * 60 * 1000).toISOString(),
+  completedAt: index === 0 ? new Date(baseMs - 30 * 60 * 1000).toISOString() : undefined,
   proofType: index === 0 ? 'pin' : undefined,
   distanceFromPrev: [0, 1200, 800, 3500, 1100][index],
   durationFromPrev: [0, 5, 4, 15, 6][index],
@@ -29,8 +33,8 @@ export const mockDeliveries: DeliveryItem[] = packages.map((pkg, index) => ({
 
 export const mockRoute: Route = {
   id: 'route_001', driverId: 'drv_001',
-  date: new Date().toISOString().split('T')[0],
+  date: '2026-04-15',
   deliveries: mockDeliveries, totalDistance: 8500,
   estimatedDuration: 5400, optimized: true,
-  startTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+  startTime: new Date(baseMs - 2 * 60 * 60 * 1000).toISOString(),
 };

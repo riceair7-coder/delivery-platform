@@ -5,6 +5,7 @@ import { DriverHeader } from '@/components/driver/DriverHeader';
 import { DeliveryCard } from '@/components/driver/DeliveryCard';
 import { CompleteModal } from '@/components/driver/CompleteModal';
 import { RouteOptimizeButton } from '@/components/driver/RouteOptimizeButton';
+import { RouteMap } from '@/components/driver/RouteMap';
 import { Navigation, MapIcon, List } from 'lucide-react';
 
 export default function DriverPage() {
@@ -50,15 +51,7 @@ export default function DriverPage() {
         </div>
       )}
 
-      {view === 'map' && (
-        <div className="flex-1 bg-gray-200 flex items-center justify-center">
-          <div className="text-center p-8">
-            <MapIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 font-medium">지도 뷰</p>
-            <p className="text-gray-400 text-sm">Google Maps API 연동 후 사용 가능</p>
-          </div>
-        </div>
-      )}
+      {view === 'map' && <RouteMap />}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3">
         <div className="flex justify-around max-w-md mx-auto">

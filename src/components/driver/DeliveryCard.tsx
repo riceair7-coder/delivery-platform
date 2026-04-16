@@ -12,7 +12,13 @@ interface Props {
 export function DeliveryCard({ delivery, isActive, onClick }: Props) {
   const pkg = delivery.package;
   const clickable = delivery.status === 'pending' || delivery.status === 'in_progress';
-  const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-';
+  const fmtTime = (iso?: string) => {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  };
   const fmtDist = (m?: number) => !m ? '' : m >= 1000 ? `${(m/1000).toFixed(1)}km` : `${m}m`;
 
   return (
@@ -63,7 +69,7 @@ export function DeliveryCard({ delivery, isActive, onClick }: Props) {
         {delivery.status === 'completed' && (
           <div className="mt-2 p-2 bg-emerald-50 rounded-lg flex justify-between">
             <span className="text-xs text-emerald-700">✓ 완료 ({delivery.proofType === 'pin' ? 'PIN' : delivery.proofType === 'photo' ? '사진' : '서명'})</span>
-            <span className="text-xs text-gray-400">{delivery.completedAt ? new Date(delivery.completedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+            <span className="text-xs text-gray-400">{fmtTime(delivery.completedAt)}</span>
           </div>
         )}
       </div>
