@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ========== 배송기사 ==========
+model Driver {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String   @unique
+  vehicleType   String   @default("motorcycle") // motorcycle, bicycle, car, van
+  vehicleNumber String   @default("")
+  isOnline      Boolean  @default(false)
+  currentLat    Float?
+  currentLng    Float?
+  token         String?  @unique // 인증 토큰
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  routes     Route[]
+  deliveries Delivery[]
+}
+
+// ========== 배송 경로 (당일 기사별 1개) ==========
+model Route {
+  id                String   @id @default(cuid())
+  driverId          String
+  date              String   // YYYY-MM-DD
+  totalDistance      Float    @default(0) // meters
+  estimatedDuration  Float    @default(0) // seconds
+  optimized         Boolean  @default(false)
+  startTime         DateTime?
+  endTime           DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  driver     Driver     @relation(fields: [driverId], references: [id])
+  deliveries Delivery[]
+
+  @@unique([driverId, date])
+}
+
+// ========== 개별 배송 ==========
+model Delivery {
+  id              String   @id @default(cuid())
+  routeId         String?
+  driverId        String?
+  trackingNumber  String   @unique
+  status          String   @default("pending") // pending, in_progress, completed, failed, cancelled
+
+  // 배송지 정보
+  address         String
+  addressDetail   String   @default("")
+  lat             Float    @default(0)
+  lng             Float    @default(0)
+
+  // 수령인 정보
+  recipientName   String
+  recipientPhone  String
+  specialInstructions String @default("")
+
+  // 물품 정보
+  weight          Float    @default(0) // kg
+  volume          Float    @default(0) // cm³
+  pinCode         String?
+
+  // 경로 최적화 결과
+  sortOrder       Int      @default(0) // 배송 순서
+  distanceFromPrev Float   @default(0) // meters
+  durationFromPrev Float   @default(0) // seconds
+  estimatedArrival DateTime?
+
+  // 완료 처리
+  completedAt     DateTime?
+  proofType       String?  // photo, signature, pin
+  proofData       String?  // 사진 URL 또는 서명 데이터
+  failureReason   String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  route  Route?  @relation(fields: [routeId], references: [id])
+  driver Driver? @relation(fields: [driverId], references: [id])
+}

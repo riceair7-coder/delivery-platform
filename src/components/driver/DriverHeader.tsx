@@ -3,6 +3,7 @@ import { useDeliveryStore } from '@/store/deliveryStore';
 
 export function DriverHeader() {
   const { driver, route } = useDeliveryStore();
+  if (!driver || !route) return null;
   const completed = route.deliveries.filter(d => d.status === 'completed').length;
   const total = route.deliveries.length;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;

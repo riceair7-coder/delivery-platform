@@ -1,56 +1,220 @@
 import { create } from 'zustand';
-import { Driver, Route } from '@/types';
-import { mockDriver, mockDeliveries, mockRoute } from '@/lib/mockData';
+import { Driver, Route, DeliveryItem } from '@/types';
+import * as api from '@/lib/api';
 
 interface OptimizationResult {
-  savedTime: number;         // 절감 시간 (초)
-  savedTimePercent: number;  // 절감률 (%)
-  originalDuration: number;  // 기존 경로 소요시간 (초)
-  processingTime: number;    // 최적화 처리시간 (초)
-  apiCalls: number;          // API 호출 수
+  savedTime: number;
+  savedTimePercent: number;
+  originalDuration: number;
+  processingTime: number;
+  apiCalls: number;
 }
 
 interface DeliveryStore {
-  driver: Driver;
-  route: Route;
+  // State
+  driver: Driver | null;
+  route: Route | null;
+  isLoading: boolean;
   isOptimizing: boolean;
+  isAuthenticated: boolean;
   lastOptimization: OptimizationResult | null;
-  setActiveDelivery: (id: string | null) => void;
-  completeDelivery: (id: string, proofType: 'photo' | 'signature' | 'pin', proofData: string) => void;
-  failDelivery: (id: string, reason: string) => void;
+  error: string | null;
+
+  // Auth
+  login: (phone: string) => Promise<void>;
+  logout: () => void;
+  checkAuth: () => Promise<boolean>;
+
+  // Data
+  loadData: () => Promise<void>;
+  refreshDeliveries: () => Promise<void>;
+
+  // Actions
+  completeDelivery: (id: string, proofType: 'photo' | 'signature' | 'pin', proofData: string) => Promise<void>;
+  failDelivery: (id: string, reason: string) => Promise<void>;
   optimizeRoute: () => Promise<void>;
+
+  // Location
+  startLocationTracking: () => void;
+  stopLocationTracking: () => void;
 }
 
-export const useDeliveryStore = create<DeliveryStore>((set, get) => ({
-  driver: mockDriver,
-  route: { ...mockRoute, deliveries: [...mockDeliveries] },
-  isOptimizing: false,
-  lastOptimization: null,
-
-  setActiveDelivery: (_id) => {},
-
-  completeDelivery: (id, proofType, proofData) => set(state => ({
-    route: {
-      ...state.route,
-      deliveries: state.route.deliveries.map(d =>
-        d.id === id ? { ...d, status: 'completed' as const, completedAt: new Date().toISOString(), proofType, proofData } : d
-      ),
+// DB 배송 레코드 → 프론트엔드 DeliveryItem 변환
+function toDeliveryItem(d: any): DeliveryItem {
+  return {
+    id: d.id,
+    package: {
+      id: d.id,
+      trackingNumber: d.trackingNumber,
+      recipientName: d.recipientName,
+      recipientPhone: d.recipientPhone,
+      address: d.address,
+      addressDetail: d.addressDetail || '',
+      lat: d.lat,
+      lng: d.lng,
+      weight: d.weight,
+      volume: d.volume,
+      specialInstructions: d.specialInstructions || undefined,
+      pinCode: d.pinCode || undefined,
     },
-    driver: { ...state.driver, todayCompleted: state.driver.todayCompleted + 1, estimatedEarnings: state.driver.estimatedEarnings + 3500 },
-  })),
+    status: d.status,
+    order: d.sortOrder,
+    estimatedArrival: d.estimatedArrival || undefined,
+    completedAt: d.completedAt || undefined,
+    proofType: d.proofType || undefined,
+    proofData: d.proofData || undefined,
+    failureReason: d.failureReason || undefined,
+    distanceFromPrev: d.distanceFromPrev,
+    durationFromPrev: d.durationFromPrev,
+  };
+}
 
-  failDelivery: (id, reason) => set(state => ({
-    route: { ...state.route, deliveries: state.route.deliveries.map(d => d.id === id ? { ...d, status: 'failed' as const, failureReason: reason } : d) },
-    driver: { ...state.driver, todayFailed: state.driver.todayFailed + 1 },
-  })),
+function toDriver(d: any, deliveries: DeliveryItem[]): Driver {
+  const completed = deliveries.filter(x => x.status === 'completed').length;
+  const failed = deliveries.filter(x => x.status === 'failed').length;
+  return {
+    id: d.id,
+    name: d.name,
+    phone: d.phone,
+    vehicleType: d.vehicleType,
+    vehicleNumber: d.vehicleNumber,
+    currentLat: d.currentLat,
+    currentLng: d.currentLng,
+    isOnline: d.isOnline,
+    todayCompleted: completed,
+    todayFailed: failed,
+    estimatedEarnings: completed * 3500,
+  };
+}
+
+let locationWatchId: number | null = null;
+
+export const useDeliveryStore = create<DeliveryStore>((set, get) => ({
+  driver: null,
+  route: null,
+  isLoading: false,
+  isOptimizing: false,
+  isAuthenticated: !!api.getToken(),
+  lastOptimization: null,
+  error: null,
+
+  login: async (phone) => {
+    set({ isLoading: true, error: null });
+    try {
+      const { driver } = await api.login(phone);
+      set({ isAuthenticated: true, isLoading: false });
+      // loadData will be called after redirect
+    } catch (e: any) {
+      set({ error: e.message, isLoading: false });
+      throw e;
+    }
+  },
+
+  logout: () => {
+    api.clearToken();
+    get().stopLocationTracking();
+    set({ driver: null, route: null, isAuthenticated: false });
+  },
+
+  checkAuth: async () => {
+    if (!api.getToken()) {
+      set({ isAuthenticated: false });
+      return false;
+    }
+    try {
+      await api.getMe();
+      set({ isAuthenticated: true });
+      return true;
+    } catch {
+      set({ isAuthenticated: false });
+      return false;
+    }
+  },
+
+  loadData: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const routeData = await api.getTodayRoute();
+      const deliveries = (routeData.deliveries || []).map(toDeliveryItem);
+      const driverData = await api.getMe();
+
+      set({
+        driver: toDriver(driverData, deliveries),
+        route: {
+          id: routeData.id,
+          driverId: routeData.driverId,
+          date: routeData.date,
+          deliveries,
+          totalDistance: routeData.totalDistance,
+          estimatedDuration: routeData.estimatedDuration,
+          optimized: routeData.optimized,
+          startTime: routeData.startTime || undefined,
+          endTime: routeData.endTime || undefined,
+        },
+        isLoading: false,
+      });
+    } catch (e: any) {
+      set({ error: e.message, isLoading: false });
+    }
+  },
+
+  refreshDeliveries: async () => {
+    try {
+      const routeData = await api.getTodayRoute();
+      const deliveries = (routeData.deliveries || []).map(toDeliveryItem);
+      set(s => ({
+        route: s.route ? { ...s.route, deliveries } : null,
+        driver: s.driver ? {
+          ...s.driver,
+          todayCompleted: deliveries.filter((d: DeliveryItem) => d.status === 'completed').length,
+          todayFailed: deliveries.filter((d: DeliveryItem) => d.status === 'failed').length,
+          estimatedEarnings: deliveries.filter((d: DeliveryItem) => d.status === 'completed').length * 3500,
+        } : null,
+      }));
+    } catch (e: any) {
+      console.error('Failed to refresh deliveries:', e);
+    }
+  },
+
+  completeDelivery: async (id, proofType, proofData) => {
+    try {
+      await api.completeDelivery(id, {
+        proofType,
+        proofData,
+        pinCode: proofType === 'pin' ? proofData : undefined,
+      });
+      // Refresh from server to get updated state
+      await get().refreshDeliveries();
+    } catch (e: any) {
+      set({ error: e.message });
+      throw e;
+    }
+  },
+
+  failDelivery: async (id, reason) => {
+    try {
+      await api.completeDelivery(id, {
+        proofType: 'photo',
+        failureReason: reason,
+      });
+      await get().refreshDeliveries();
+    } catch (e: any) {
+      set({ error: e.message });
+      throw e;
+    }
+  },
 
   optimizeRoute: async () => {
     const { driver, route } = get();
+    if (!driver || !route) return;
     set({ isOptimizing: true });
     try {
       const res = await fetch('/api/route-optimize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${api.getToken()}`,
+        },
         body: JSON.stringify({
           deliveries: route.deliveries,
           driverLat: driver.currentLat,
@@ -61,13 +225,13 @@ export const useDeliveryStore = create<DeliveryStore>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         set(s => ({
-          route: {
+          route: s.route ? {
             ...s.route,
             deliveries: data.data.optimizedDeliveries,
             totalDistance: data.data.totalDistance,
             estimatedDuration: data.data.estimatedDuration,
             optimized: true,
-          },
+          } : null,
           lastOptimization: {
             savedTime: data.data.savedTime || 0,
             savedTimePercent: data.data.savedTimePercent || 0,
@@ -79,6 +243,32 @@ export const useDeliveryStore = create<DeliveryStore>((set, get) => ({
       }
     } finally {
       set({ isOptimizing: false });
+    }
+  },
+
+  startLocationTracking: () => {
+    if (locationWatchId !== null) return;
+    if (!navigator.geolocation) return;
+
+    locationWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        // Update server
+        api.updateLocation(latitude, longitude).catch(console.error);
+        // Update local state
+        set(s => ({
+          driver: s.driver ? { ...s.driver, currentLat: latitude, currentLng: longitude } : null,
+        }));
+      },
+      (err) => console.error('Location error:', err),
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 },
+    );
+  },
+
+  stopLocationTracking: () => {
+    if (locationWatchId !== null) {
+      navigator.geolocation.clearWatch(locationWatchId);
+      locationWatchId = null;
     }
   },
 }));

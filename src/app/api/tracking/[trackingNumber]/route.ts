@@ -1,17 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { mockDeliveries, mockDriver } from '@/lib/mockData';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(
-  _req: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ trackingNumber: string }> }
 ) {
-  const { trackingNumber } = await params;
-  const d = mockDeliveries.find(x => x.package.trackingNumber === trackingNumber);
-  if (!d) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  return NextResponse.json({ success: true, data: {
-    trackingNumber: d.package.trackingNumber, status: d.status,
-    recipientName: d.package.recipientName, address: d.package.address,
-    estimatedArrival: d.estimatedArrival, completedAt: d.completedAt,
-    driverLocation: d.status === 'in_progress' ? { lat: mockDriver.currentLat, lng: mockDriver.currentLng, updatedAt: new Date().toISOString() } : null,
-  }});
+  try {
+    const { trackingNumber } = await params;
+
+    const delivery = await prisma.delivery.findUnique({
+      where: { trackingNumber },
+      include: {
+        driver: {
+          select: {
+            currentLat: true,
+            currentLng: true,
+            updatedAt: true,
+            name: true,
+          },
+        },
+        route: {
+          select: {
+            totalDistance: true,
+            estimatedDuration: true,
+          },
+        },
+      },
+    });
+
+    if (!delivery) {
+      return NextResponse.json(
+        { error: 'Delivery not found' },
+        { status: 404 }
+      );
+    }
+
+    const data: Record<string, unknown> = {
+      trackingNumber: delivery.trackingNumber,
+      status: delivery.status,
+      recipientName: delivery.recipientName,
+      address: delivery.address,
+      addressDetail: delivery.addressDetail,
+      lat: delivery.lat,
+      lng: delivery.lng,
+      estimatedArrival: delivery.estimatedArrival,
+      completedAt: delivery.completedAt,
+      proofType: delivery.proofType,
+      sortOrder: delivery.sortOrder,
+      distanceFromPrev: delivery.distanceFromPrev,
+      durationFromPrev: delivery.durationFromPrev,
+    };
+
+    if (delivery.status === 'in_progress' && delivery.driver) {
+      data.driverLocation = {
+        lat: delivery.driver.currentLat,
+        lng: delivery.driver.currentLng,
+        updatedAt: delivery.driver.updatedAt?.toISOString(),
+        driverName: delivery.driver.name,
+      };
+    }
+
+    return NextResponse.json({
+      success: true,
+      data,
+    });
+  } catch {
+    return NextResponse.json(
+      { error: 'Failed to fetch tracking info' },
+      { status: 500 }
+    );
+  }
 }

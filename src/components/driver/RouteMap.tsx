@@ -89,6 +89,8 @@ export function RouteMap() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { route, driver } = useDeliveryStore();
+  const routeData = route;
+  const driverData = driver;
 
   // 카카오맵 SDK 로드
   useEffect(() => {
@@ -126,10 +128,10 @@ export function RouteMap() {
 
   // 지도 초기화 + 마커/경로 그리기
   useEffect(() => {
-    if (loading || error || !mapRef.current || !window.kakao?.maps) return;
+    if (loading || error || !mapRef.current || !window.kakao?.maps || !routeData || !driverData) return;
 
     const kakao = window.kakao;
-    const deliveries = [...route.deliveries].sort((a, b) => a.order - b.order);
+    const deliveries = [...routeData.deliveries].sort((a, b) => a.order - b.order);
     const validDeliveries = deliveries.filter(d => d.package.lat && d.package.lng);
 
     if (validDeliveries.length === 0) return;
@@ -137,8 +139,8 @@ export function RouteMap() {
     // 지도 생성
     if (!mapInstance.current) {
       const center = new kakao.maps.LatLng(
-        driver.currentLat || validDeliveries[0].package.lat,
-        driver.currentLng || validDeliveries[0].package.lng,
+        driverData?.currentLat || validDeliveries[0].package.lat,
+        driverData?.currentLng || validDeliveries[0].package.lng,
       );
       mapInstance.current = new kakao.maps.Map(mapRef.current, {
         center,
@@ -166,8 +168,8 @@ export function RouteMap() {
     const routePoints: any[] = [];
 
     // 거점 마커
-    if (driver.currentLat && driver.currentLng) {
-      const depotPos = new kakao.maps.LatLng(driver.currentLat, driver.currentLng);
+    if (driverData.currentLat && driverData.currentLng) {
+      const depotPos = new kakao.maps.LatLng(driverData.currentLat, driverData.currentLng);
       bounds.extend(depotPos);
       routePoints.push(depotPos);
 
@@ -230,9 +232,9 @@ export function RouteMap() {
       polylinesRef.current.push(polyline);
 
       // 점선: 완료된 경로
-      if (driver.currentLat && driver.currentLng && completedDeliveries.length > 0) {
+      if (driverData.currentLat && driverData.currentLng && completedDeliveries.length > 0) {
         const completedPoints = [
-          new kakao.maps.LatLng(driver.currentLat, driver.currentLng),
+          new kakao.maps.LatLng(driverData.currentLat, driverData.currentLng),
           ...completedDeliveries.map(d => new kakao.maps.LatLng(d.package.lat, d.package.lng)),
         ];
         const dottedLine = new kakao.maps.Polyline({
@@ -255,7 +257,7 @@ export function RouteMap() {
       infoWindow.close();
     });
 
-  }, [loading, error, route.deliveries, route.optimized, driver.currentLat, driver.currentLng]);
+  }, [loading, error, routeData?.deliveries, routeData?.optimized, driverData?.currentLat, driverData?.currentLng]);
 
   if (error) {
     return (
@@ -300,25 +302,25 @@ export function RouteMap() {
       </div>
 
       {/* 경로 요약 */}
-      {route.optimized && (
+      {routeData?.optimized && (
         <div className="absolute top-4 left-4 right-4 bg-white/95 backdrop-blur rounded-xl shadow-lg px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-gray-500">최적화 경로</p>
               <p className="text-sm font-bold text-gray-900">
-                {route.deliveries.filter(d => d.status === 'pending' || d.status === 'in_progress').length}건 남음
+                {routeData?.deliveries.filter(d => d.status === 'pending' || d.status === 'in_progress').length || 0}건 남음
               </p>
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">예상 소요</p>
               <p className="text-sm font-bold text-blue-600">
-                {route.estimatedDuration > 0 ? `${Math.round(route.estimatedDuration / 60)}분` : '-'}
+                {(routeData?.estimatedDuration || 0) > 0 ? `${Math.round((routeData?.estimatedDuration || 0) / 60)}분` : '-'}
               </p>
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">총 거리</p>
               <p className="text-sm font-bold text-gray-900">
-                {route.totalDistance > 0 ? `${(route.totalDistance / 1000).toFixed(1)}km` : '-'}
+                {(routeData?.totalDistance || 0) > 0 ? `${((routeData?.totalDistance || 0) / 1000).toFixed(1)}km` : '-'}
               </p>
             </div>
           </div>

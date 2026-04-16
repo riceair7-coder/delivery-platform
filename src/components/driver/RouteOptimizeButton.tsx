@@ -4,6 +4,7 @@ import { Zap, Loader2, CheckCircle } from 'lucide-react';
 
 export function RouteOptimizeButton() {
   const { optimizeRoute, isOptimizing, route, lastOptimization } = useDeliveryStore();
+  if (!route) return null;
   const pending = route.deliveries.filter(d => d.status === 'pending').length;
 
   if (pending < 2) return null;
