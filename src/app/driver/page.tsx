@@ -11,12 +11,20 @@ import { Navigation, MapIcon, List, Loader2, LogOut } from 'lucide-react';
 
 export default function DriverPage() {
   const router = useRouter();
-  const { route, driver, isLoading, isAuthenticated, error, loadData, logout, startLocationTracking, stopLocationTracking } = useDeliveryStore();
+  const { route, driver, isLoading, isAuthenticated, error, loadData, logout, checkAuth, startLocationTracking, stopLocationTracking } = useDeliveryStore();
+  const [mounted, setMounted] = useState(false);
   const [modal, setModal] = useState<string | null>(null);
   const [view, setView] = useState<'list' | 'map'>('list');
 
+  // 클라이언트 마운트 후에만 auth 체크 (hydration 오류 방지)
+  useEffect(() => {
+    setMounted(true);
+    checkAuth();
+  }, [checkAuth]);
+
   // Auth check + data loading
   useEffect(() => {
+    if (!mounted) return;
     if (!isAuthenticated) {
       router.replace('/driver/login');
       return;
@@ -24,24 +32,24 @@ export default function DriverPage() {
     loadData();
     startLocationTracking();
     return () => stopLocationTracking();
-  }, [isAuthenticated]);
+  }, [mounted, isAuthenticated]);
 
-  // Redirect if auth lost
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.replace('/driver/login');
-    }
-  }, [isAuthenticated, router]);
-
-  if (!isAuthenticated) return null;
-
-  if (isLoading || !route || !driver) {
+  // SSR과 첫 렌더링은 동일한 로딩 화면
+  if (!mounted || isLoading || !route || !driver) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-10 h-10 text-blue-500 animate-spin mx-auto mb-3" />
           <p className="text-gray-500">데이터 로딩 중...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
       </div>
     );
   }

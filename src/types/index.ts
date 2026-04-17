@@ -40,6 +40,10 @@ export interface Driver {
   vehicleNumber: string;
   currentLat?: number;
   currentLng?: number;
+  // 종점 (Open TSP용 퇴근지)
+  homeAddress?: string;
+  homeLat?: number;
+  homeLng?: number;
   isOnline: boolean;
   todayCompleted: number;
   todayFailed: number;

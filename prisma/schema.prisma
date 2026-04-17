@@ -17,6 +17,12 @@ model Driver {
   isOnline      Boolean  @default(false)
   currentLat    Float?
   currentLng    Float?
+
+  // 종점 (기사 집/퇴근지) — Open TSP용
+  homeAddress   String?  // 예: "서울시 강동구 ..."
+  homeLat       Float?
+  homeLng       Float?
+
   token         String?  @unique // 인증 토큰
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

@@ -22,6 +22,9 @@ async function main() {
       isOnline: true,
       currentLat: 37.5665,
       currentLng: 126.9780,
+      homeAddress: '서울시 강동구 천호대로 1000',
+      homeLat: 37.5385,
+      homeLng: 127.1238,
       token: crypto.randomBytes(32).toString('hex'),
     },
   });

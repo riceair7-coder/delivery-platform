@@ -25,10 +25,13 @@ export async function GET() {
     const failed = allDeliveries.filter((d) => d.status === 'failed').length;
     const completionRate = totalDeliveries > 0 ? Math.round((completed / totalDeliveries) * 100) : 0;
 
-    // Build driver summaries
-    const drivers = routes.map((route) => {
-      const driver = route.driver;
-      const driverDeliveries = route.deliveries;
+    // Build driver summaries — include drivers with AND without route today
+    const routedDriverIds = new Set(routes.map((r) => r.driverId));
+    const allDrivers = await prisma.driver.findMany();
+
+    const drivers = allDrivers.map((driver) => {
+      const route = routes.find((r) => r.driverId === driver.id);
+      const driverDeliveries = route?.deliveries || [];
       return {
         id: driver.id,
         name: driver.name,
@@ -38,9 +41,13 @@ export async function GET() {
         isOnline: driver.isOnline,
         currentLat: driver.currentLat,
         currentLng: driver.currentLng,
+        homeAddress: driver.homeAddress,
+        homeLat: driver.homeLat,
+        homeLng: driver.homeLng,
         todayCompleted: driverDeliveries.filter((d) => d.status === 'completed').length,
         todayFailed: driverDeliveries.filter((d) => d.status === 'failed').length,
         todayTotal: driverDeliveries.length,
+        hasRouteToday: routedDriverIds.has(driver.id),
       };
     });
 

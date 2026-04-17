@@ -23,18 +23,32 @@ const STATUS_COLORS: Record<string, { bg: string; border: string; text: string }
   failed: { bg: '#ef4444', border: '#dc2626', text: '#fff' },
 };
 
-function createMarkerContent(delivery: DeliveryItem, isDepot = false): string {
-  if (isDepot) {
-    return `
-      <div style="display:flex;align-items:center;justify-content:center;width:36px;height:36px;
-        background:#1e293b;border:3px solid #f59e0b;border-radius:50%;
-        color:#f59e0b;font-size:14px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,0.3);
-        position:relative;top:-18px;left:-18px;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-        </svg>
-      </div>`;
-  }
+function createDepotMarker(): string {
+  return `
+    <div style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
+      background:#1e293b;border:3px solid #f59e0b;border-radius:50%;
+      color:#f59e0b;box-shadow:0 2px 8px rgba(0,0,0,0.3);
+      position:relative;top:-20px;left:-20px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/>
+        <path d="M9 9v.01"/><path d="M9 12v.01"/><path d="M9 15v.01"/><path d="M9 18v.01"/>
+      </svg>
+    </div>`;
+}
+
+function createHomeMarker(): string {
+  return `
+    <div style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;
+      background:#7c3aed;border:3px solid #a78bfa;border-radius:50%;
+      color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);
+      position:relative;top:-20px;left:-20px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+    </div>`;
+}
+
+function createMarkerContent(delivery: DeliveryItem): string {
 
   const colors = STATUS_COLORS[delivery.status] || STATUS_COLORS.pending;
   const isActive = delivery.status === 'in_progress';
@@ -88,9 +102,18 @@ export function RouteMap() {
   const infoWindowRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [depot, setDepot] = useState<{ name: string; address: string; lat: number; lng: number } | null>(null);
   const { route, driver } = useDeliveryStore();
   const routeData = route;
   const driverData = driver;
+
+  // 거점 조회
+  useEffect(() => {
+    fetch('/api/system/depot')
+      .then(r => r.json())
+      .then(j => { if (j.success) setDepot(j.data); })
+      .catch(() => {});
+  }, []);
 
   // 카카오맵 SDK 로드
   useEffect(() => {
@@ -167,23 +190,71 @@ export function RouteMap() {
     const bounds = new kakao.maps.LatLngBounds();
     const routePoints: any[] = [];
 
-    // 거점 마커
-    if (driverData.currentLat && driverData.currentLng) {
-      const depotPos = new kakao.maps.LatLng(driverData.currentLat, driverData.currentLng);
+    // 거점 마커 (공통 출발지)
+    if (depot) {
+      const depotPos = new kakao.maps.LatLng(depot.lat, depot.lng);
       bounds.extend(depotPos);
       routePoints.push(depotPos);
 
       const depotContent = document.createElement('div');
-      depotContent.innerHTML = createMarkerContent({} as DeliveryItem, true);
+      depotContent.innerHTML = createDepotMarker();
+      depotContent.style.cursor = 'pointer';
+      depotContent.onclick = () => {
+        infoWindow.setContent(`
+          <div style="padding:10px;min-width:180px;font-family:-apple-system,sans-serif;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+              <span style="padding:2px 6px;background:#f59e0b;color:#fff;border-radius:4px;font-size:10px;font-weight:700;">거점</span>
+              <span style="font-size:12px;color:#666;">출발지</span>
+            </div>
+            <p style="font-size:13px;font-weight:600;margin:0 0 2px;">${depot.name}</p>
+            <p style="font-size:12px;color:#555;margin:0;">${depot.address}</p>
+          </div>`);
+        infoWindow.setPosition(depotPos);
+        infoWindow.open(map);
+      };
 
       const depotOverlay = new kakao.maps.CustomOverlay({
         position: depotPos,
         content: depotContent,
         yAnchor: 0,
         xAnchor: 0,
+        zIndex: 8,
       });
       depotOverlay.setMap(map);
       markersRef.current.push(depotOverlay);
+    }
+
+    // 종점 마커 (기사별 퇴근지)
+    if (driverData?.homeLat && driverData?.homeLng) {
+      const homePos = new kakao.maps.LatLng(driverData.homeLat, driverData.homeLng);
+      bounds.extend(homePos);
+
+      const homeContent = document.createElement('div');
+      homeContent.innerHTML = createHomeMarker();
+      homeContent.style.cursor = 'pointer';
+      homeContent.onclick = () => {
+        infoWindow.setContent(`
+          <div style="padding:10px;min-width:180px;font-family:-apple-system,sans-serif;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+              <span style="padding:2px 6px;background:#7c3aed;color:#fff;border-radius:4px;font-size:10px;font-weight:700;">종점</span>
+              <span style="font-size:12px;color:#666;">퇴근지</span>
+            </div>
+            <p style="font-size:13px;font-weight:600;margin:0 0 2px;">${driverData.name}</p>
+            <p style="font-size:12px;color:#555;margin:0;">${driverData.homeAddress || '등록된 주소 없음'}</p>
+          </div>`);
+        infoWindow.setPosition(homePos);
+        infoWindow.open(map);
+      };
+
+      const homeOverlay = new kakao.maps.CustomOverlay({
+        position: homePos,
+        content: homeContent,
+        yAnchor: 0,
+        xAnchor: 0,
+        zIndex: 8,
+      });
+      homeOverlay.setMap(map);
+      markersRef.current.push(homeOverlay);
     }
 
     // 배송지 마커
@@ -219,19 +290,59 @@ export function RouteMap() {
       markersRef.current.push(overlay);
     });
 
-    // 경로 폴리라인 (완료 제외, 순서대로)
-    if (routePoints.length >= 2) {
-      const polyline = new kakao.maps.Polyline({
-        path: routePoints,
-        strokeWeight: 4,
-        strokeColor: '#3b82f6',
-        strokeOpacity: 0.8,
-        strokeStyle: 'solid',
-      });
-      polyline.setMap(map);
-      polylinesRef.current.push(polyline);
+    // 종점을 경로 끝에 추가 (Open TSP: 거점→배송→종점)
+    if (driverData?.homeLat && driverData?.homeLng) {
+      routePoints.push(new kakao.maps.LatLng(driverData.homeLat, driverData.homeLng));
+    }
 
-      // 점선: 완료된 경로
+    // 경로 폴리라인 — 기본 직선을 먼저 표시 (로딩 중 UX)
+    if (routePoints.length >= 2) {
+      const straightLine = new kakao.maps.Polyline({
+        path: routePoints,
+        strokeWeight: 3,
+        strokeColor: '#93c5fd', // 연한 파랑 (로딩용)
+        strokeOpacity: 0.5,
+        strokeStyle: 'shortdash',
+      });
+      straightLine.setMap(map);
+      polylinesRef.current.push(straightLine);
+
+      // 카카오 Directions API로 실제 도로 경로 비동기 조회
+      const pointsForApi = routePoints.map((p: any) => ({ lat: p.getLat(), lng: p.getLng() }));
+
+      fetch('/api/route-paths', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points: pointsForApi }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) return;
+          const legs = data.data.legs;
+
+          // 직선 제거 (실제 경로로 대체)
+          straightLine.setMap(null);
+
+          // 각 구간별 실제 도로 경로 그리기
+          for (const leg of legs) {
+            if (!leg.coords || leg.coords.length < 2) continue;
+            const path = leg.coords.map((c: any) => new kakao.maps.LatLng(c.lat, c.lng));
+            const roadLine = new kakao.maps.Polyline({
+              path,
+              strokeWeight: 5,
+              strokeColor: leg.fromFallback ? '#93c5fd' : '#3b82f6',
+              strokeOpacity: leg.fromFallback ? 0.5 : 0.85,
+              strokeStyle: leg.fromFallback ? 'shortdash' : 'solid',
+            });
+            roadLine.setMap(map);
+            polylinesRef.current.push(roadLine);
+          }
+        })
+        .catch(() => {
+          // API 실패 시 기본 직선 유지
+        });
+
+      // 점선: 완료된 경로 (현재 위치 → 완료 배송지)
       if (driverData.currentLat && driverData.currentLng && completedDeliveries.length > 0) {
         const completedPoints = [
           new kakao.maps.LatLng(driverData.currentLat, driverData.currentLng),
@@ -257,7 +368,7 @@ export function RouteMap() {
       infoWindow.close();
     });
 
-  }, [loading, error, routeData?.deliveries, routeData?.optimized, driverData?.currentLat, driverData?.currentLng]);
+  }, [loading, error, depot, routeData?.deliveries, routeData?.optimized, driverData?.currentLat, driverData?.currentLng, driverData?.homeLat, driverData?.homeLng]);
 
   if (error) {
     return (
@@ -285,6 +396,10 @@ export function RouteMap() {
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full bg-yellow-500 border-2 border-gray-900" />
             <span className="text-gray-600">거점</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-purple-500 border-2 border-purple-300" />
+            <span className="text-gray-600">종점</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-blue-600" />

@@ -14,6 +14,11 @@ import {
   Route,
   Clock,
   AlertCircle,
+  Home,
+  Building2,
+  Edit2,
+  Save,
+  X,
 } from 'lucide-react';
 
 interface DashboardDriver {
@@ -25,9 +30,13 @@ interface DashboardDriver {
   isOnline: boolean;
   currentLat: number | null;
   currentLng: number | null;
+  homeAddress: string | null;
+  homeLat: number | null;
+  homeLng: number | null;
   todayCompleted: number;
   todayFailed: number;
   todayTotal: number;
+  hasRouteToday?: boolean;
 }
 
 interface DashboardRoute {
@@ -313,59 +322,15 @@ export default function AdminPage() {
         {/* ===== Drivers Tab ===== */}
         {tab === 'drivers' && data && (
           <>
+            <DepotInfoCard />
             {data.drivers.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-sm p-8 text-center text-gray-400">
                 <Users className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                <p>오늘 배정된 기사가 없습니다</p>
+                <p>등록된 기사가 없습니다</p>
               </div>
             ) : (
               data.drivers.map((driver) => (
-                <div key={driver.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                  <div className="p-4 border-b border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <Users className="w-6 h-6 text-blue-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold">{driver.name}</p>
-                        <p className="text-sm text-gray-500">
-                          {vehicleEmoji[driver.vehicleType] || '🚗'} {driver.vehicleNumber}
-                        </p>
-                      </div>
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          driver.isOnline
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-gray-100 text-gray-500'
-                        }`}
-                      >
-                        {driver.isOnline ? '운행중' : '오프라인'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 divide-x divide-gray-100">
-                    <div className="p-4 text-center">
-                      <p className="text-2xl font-bold text-emerald-600">{driver.todayCompleted}</p>
-                      <p className="text-xs text-gray-500 mt-1">완료</p>
-                    </div>
-                    <div className="p-4 text-center">
-                      <p className="text-2xl font-bold text-red-500">{driver.todayFailed}</p>
-                      <p className="text-xs text-gray-500 mt-1">실패</p>
-                    </div>
-                    <div className="p-4 text-center">
-                      <p className="text-2xl font-bold">{driver.todayTotal}</p>
-                      <p className="text-xs text-gray-500 mt-1">전체</p>
-                    </div>
-                  </div>
-                  {driver.currentLat != null && driver.currentLng != null && (
-                    <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-500">
-                      <MapPin className="w-3.5 h-3.5" />
-                      <span>
-                        {driver.currentLat.toFixed(4)}, {driver.currentLng.toFixed(4)}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                <DriverCard key={driver.id} driver={driver} onUpdated={fetchData} />
               ))
             )}
           </>
@@ -506,10 +471,198 @@ export default function AdminPage() {
 }
 
 /* ========== ERP Sync Panel ========== */
+/* ========== Depot Info Card ========== */
+function DepotInfoCard() {
+  const [depot, setDepot] = useState<{ name: string; address: string; lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/system/depot')
+      .then(r => r.json())
+      .then(j => { if (j.success) setDepot(j.data); })
+      .catch(() => {});
+  }, []);
+
+  if (!depot) return null;
+
+  return (
+    <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center flex-shrink-0">
+          <Building2 className="w-5 h-5 text-white" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-medium text-amber-700">거점 (전 기사 공통 출발지)</p>
+          <p className="font-bold text-gray-900 mt-0.5">{depot.name}</p>
+          <p className="text-sm text-gray-600 mt-1">{depot.address}</p>
+          <p className="text-xs text-gray-400 mt-1">
+            ({depot.lat.toFixed(4)}, {depot.lng.toFixed(4)})
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ========== Driver Card (종점 편집 포함) ========== */
+function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [address, setAddress] = useState(driver.homeAddress || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/admin/drivers/${driver.id}/home`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setEditing(false);
+        onUpdated();
+      } else {
+        setError(json.error || '저장 실패');
+      }
+    } catch (e: any) {
+      setError(e.message || '네트워크 오류');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancel = () => {
+    setEditing(false);
+    setAddress(driver.homeAddress || '');
+    setError('');
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-100">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+            <Users className="w-6 h-6 text-blue-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold">{driver.name}</p>
+            <p className="text-sm text-gray-500">
+              {vehicleEmoji[driver.vehicleType] || '🚗'} {driver.vehicleNumber}
+            </p>
+          </div>
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              driver.isOnline
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-gray-100 text-gray-500'
+            }`}
+          >
+            {driver.isOnline ? '운행중' : '오프라인'}
+          </span>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 divide-x divide-gray-100">
+        <div className="p-4 text-center">
+          <p className="text-2xl font-bold text-emerald-600">{driver.todayCompleted}</p>
+          <p className="text-xs text-gray-500 mt-1">완료</p>
+        </div>
+        <div className="p-4 text-center">
+          <p className="text-2xl font-bold text-red-500">{driver.todayFailed}</p>
+          <p className="text-xs text-gray-500 mt-1">실패</p>
+        </div>
+        <div className="p-4 text-center">
+          <p className="text-2xl font-bold">{driver.todayTotal}</p>
+          <p className="text-xs text-gray-500 mt-1">전체</p>
+        </div>
+      </div>
+
+      {/* 현재 위치 */}
+      {driver.currentLat != null && driver.currentLng != null && (
+        <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-500">
+          <MapPin className="w-3.5 h-3.5" />
+          <span>현재: {driver.currentLat.toFixed(4)}, {driver.currentLng.toFixed(4)}</span>
+        </div>
+      )}
+
+      {/* 종점 편집 영역 */}
+      <div className="px-4 py-3 border-t border-gray-100 bg-gradient-to-r from-blue-50/50 to-transparent">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Home className="w-4 h-4 text-blue-500" />
+            <span className="text-xs font-medium text-gray-700">종점 (퇴근지)</span>
+          </div>
+          {!editing && (
+            <button
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              <Edit2 className="w-3 h-3" />
+              {driver.homeAddress ? '수정' : '등록'}
+            </button>
+          )}
+        </div>
+
+        {!editing ? (
+          driver.homeAddress ? (
+            <div>
+              <p className="text-sm text-gray-900">{driver.homeAddress}</p>
+              {driver.homeLat != null && driver.homeLng != null && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  ({driver.homeLat.toFixed(4)}, {driver.homeLng.toFixed(4)})
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 italic">종점이 등록되지 않았습니다</p>
+          )
+        ) : (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              placeholder="예: 서울시 강동구 천호대로 1000"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+              autoFocus
+            />
+            {error && <p className="text-xs text-red-500">{error}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={save}
+                disabled={saving || !address.trim()}
+                className="flex-1 flex items-center justify-center gap-1 py-2 bg-blue-500 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {saving ? '저장 중...' : '저장'}
+              </button>
+              <button
+                onClick={cancel}
+                className="flex items-center justify-center gap-1 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium"
+              >
+                <X className="w-3.5 h-3.5" />
+                취소
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">
+              좌표는 주소에서 자동 변환됩니다
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ErpSyncPanel() {
   const [erpDriverId, setErpDriverId] = useState('10');
   const [driverId, setDriverId] = useState('drv_001');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [includeYesterday, setIncludeYesterday] = useState(true);
   const [preview, setPreview] = useState<any>(null);
   const [syncResult, setSyncResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -521,7 +674,9 @@ function ErpSyncPanel() {
     setPreview(null);
     setSyncResult(null);
     try {
-      const res = await fetch(`/api/erp/sync?erp_driver_id=${erpDriverId}&date=${date}`);
+      const res = await fetch(
+        `/api/erp/sync?erp_driver_id=${erpDriverId}&date=${date}&include_yesterday=${includeYesterday}`
+      );
       const json = await res.json();
       if (json.success) {
         setPreview(json.data);
@@ -543,7 +698,7 @@ function ErpSyncPanel() {
       const res = await fetch('/api/erp/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ erpDriverId, driverId, date }),
+        body: JSON.stringify({ erpDriverId, driverId, date, includeYesterday }),
       });
       const json = await res.json();
       if (json.success) {
@@ -590,7 +745,7 @@ function ErpSyncPanel() {
             </div>
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">날짜</label>
+            <label className="text-xs text-gray-500 mb-1 block">배송 날짜</label>
             <input
               type="date"
               value={date}
@@ -598,6 +753,20 @@ function ErpSyncPanel() {
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
             />
           </div>
+          <label className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeYesterday}
+              onChange={e => setIncludeYesterday(e.target.checked)}
+              className="w-4 h-4 text-blue-500 rounded"
+            />
+            <div className="flex-1">
+              <span className="text-sm font-medium text-gray-700">전일 주문건 포함</span>
+              <p className="text-xs text-amber-700">
+                어제 주문된 건 중 미배송건도 오늘 배송 대상으로 가져옵니다
+              </p>
+            </div>
+          </label>
           <div className="flex gap-2">
             <button
               onClick={handlePreview}
@@ -628,8 +797,19 @@ function ErpSyncPanel() {
       {preview && (
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <h4 className="font-semibold mb-3">ERP 조회 결과</h4>
-          <div className="text-sm text-gray-600 mb-3">
-            기사 ID: {preview.erpDriverId} | 날짜: {preview.date} | 총 {preview.totalCount}건
+          <div className="text-sm text-gray-600 mb-3 space-y-1">
+            <div>기사 ID: {preview.erpDriverId} | 대상 날짜: {preview.targetDate}</div>
+            <div className="flex gap-3">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
+                전일 {preview.totals?.yesterday || 0}건
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                금일 {preview.totals?.today || 0}건
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                총 {preview.totals?.all || 0}건
+              </span>
+            </div>
           </div>
           {preview.deliveries.length === 0 ? (
             <div className="text-center py-6 text-gray-400">
@@ -638,11 +818,16 @@ function ErpSyncPanel() {
               <p className="text-xs mt-1">개발팀에서 데이터를 아직 입력하지 않았을 수 있습니다</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-96 overflow-y-auto">
               {preview.deliveries.map((d: any, i: number) => (
-                <div key={i} className="p-3 bg-gray-50 rounded-lg text-sm">
+                <div key={i} className={`p-3 rounded-lg text-sm ${d._isYesterday ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
                   <div className="flex justify-between mb-1">
-                    <span className="font-medium">{d.recipient_name}</span>
+                    <span className="font-medium flex items-center gap-1.5">
+                      {d._isYesterday && (
+                        <span className="px-1.5 py-0.5 bg-amber-200 text-amber-800 rounded text-[10px] font-bold">전일</span>
+                      )}
+                      {d.recipient_name}
+                    </span>
                     <span className="text-xs text-gray-400">ID: {d.id}</span>
                   </div>
                   <p className="text-gray-600">{d.address} {d.address_detail}</p>
@@ -662,10 +847,10 @@ function ErpSyncPanel() {
             <CheckCircle className={`w-5 h-5 ${syncResult.imported > 0 ? 'text-emerald-500' : 'text-gray-400'}`} />
             동기화 결과
           </h4>
-          <div className="grid grid-cols-3 gap-3 text-center">
+          <div className="grid grid-cols-4 gap-2 text-center">
             <div className="bg-white rounded-xl p-3">
-              <p className="text-xl font-bold text-blue-600">{syncResult.totalFromErp || 0}</p>
-              <p className="text-xs text-gray-500">ERP 데이터</p>
+              <p className="text-xl font-bold text-blue-600">{syncResult.totals?.all || 0}</p>
+              <p className="text-xs text-gray-500">ERP 전체</p>
             </div>
             <div className="bg-white rounded-xl p-3">
               <p className="text-xl font-bold text-emerald-600">{syncResult.imported}</p>
@@ -675,7 +860,20 @@ function ErpSyncPanel() {
               <p className="text-xl font-bold text-gray-400">{syncResult.skipped}</p>
               <p className="text-xs text-gray-500">건너뜀</p>
             </div>
+            <div className="bg-white rounded-xl p-3">
+              <p className="text-sm font-bold text-amber-600">
+                전일 {syncResult.importedYesterday || 0}
+              </p>
+              <p className="text-sm font-bold text-blue-600">
+                금일 {syncResult.importedToday || 0}
+              </p>
+            </div>
           </div>
+          {syncResult.datesFetched && (
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              조회 날짜: {syncResult.datesFetched.join(', ')} → {syncResult.targetDate} 경로로 임포트
+            </p>
+          )}
           {syncResult.message && (
             <p className="text-sm text-gray-600 mt-3 text-center">{syncResult.message}</p>
           )}
@@ -695,7 +893,9 @@ function ErpSyncPanel() {
         <ul className="text-xs text-blue-600 space-y-1 list-disc list-inside">
           <li>ERP API: slogis.kr/api/deliveries.php</li>
           <li>파라미터: driver_id, date (YYYY-MM-DD)</li>
-          <li>동기화 시 중복 배송은 자동으로 건너뜁니다</li>
+          <li>전일 주문건 포함 시: 선택 날짜 + 하루 전 데이터 모두 조회</li>
+          <li>동기화 시 중복 배송은 자동으로 건너뜁니다 (같은 ERP ID + 원본 날짜)</li>
+          <li>전일 주문건은 배송 메모에 [전일주문] 표시가 추가됩니다</li>
           <li>주소는 카카오 지오코딩으로 좌표 변환됩니다</li>
           <li>출발지: 서울특별시 서초구 반포대로20길 28 (고정)</li>
         </ul>

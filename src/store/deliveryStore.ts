@@ -80,6 +80,9 @@ function toDriver(d: any, deliveries: DeliveryItem[]): Driver {
     vehicleNumber: d.vehicleNumber,
     currentLat: d.currentLat,
     currentLng: d.currentLng,
+    homeAddress: d.homeAddress || undefined,
+    homeLat: d.homeLat || undefined,
+    homeLng: d.homeLng || undefined,
     isOnline: d.isOnline,
     todayCompleted: completed,
     todayFailed: failed,
@@ -94,7 +97,7 @@ export const useDeliveryStore = create<DeliveryStore>((set, get) => ({
   route: null,
   isLoading: false,
   isOptimizing: false,
-  isAuthenticated: !!api.getToken(),
+  isAuthenticated: false, // 초기값 false (SSR 동일 보장) — mount 시 checkAuth로 반영
   lastOptimization: null,
   error: null,
 
@@ -217,29 +220,58 @@ export const useDeliveryStore = create<DeliveryStore>((set, get) => ({
         },
         body: JSON.stringify({
           deliveries: route.deliveries,
-          driverLat: driver.currentLat,
-          driverLng: driver.currentLng,
           vehicleType: driver.vehicleType,
+          driverHomeLat: driver.homeLat,
+          driverHomeLng: driver.homeLng,
+          driverHomeAddress: driver.homeAddress,
         }),
       });
       const data = await res.json();
       if (data.success) {
+        const opt = data.data;
+
+        // 1. 로컬 상태 즉시 업데이트
         set(s => ({
           route: s.route ? {
             ...s.route,
-            deliveries: data.data.optimizedDeliveries,
-            totalDistance: data.data.totalDistance,
-            estimatedDuration: data.data.estimatedDuration,
+            deliveries: opt.optimizedDeliveries,
+            totalDistance: opt.totalDistance,
+            estimatedDuration: opt.estimatedDuration,
             optimized: true,
           } : null,
           lastOptimization: {
-            savedTime: data.data.savedTime || 0,
-            savedTimePercent: data.data.savedTimePercent || 0,
-            originalDuration: data.data.originalDuration || 0,
-            processingTime: data.data.processingTime || 0,
-            apiCalls: data.data.apiCalls || 0,
+            savedTime: opt.savedTime || 0,
+            savedTimePercent: opt.savedTimePercent || 0,
+            originalDuration: opt.originalDuration || 0,
+            processingTime: opt.processingTime || 0,
+            apiCalls: opt.apiCalls || 0,
           },
         }));
+
+        // 2. DB에 저장 (비동기, 실패해도 UI는 이미 반영됨)
+        try {
+          await fetch('/api/routes/optimize-save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${api.getToken()}`,
+            },
+            body: JSON.stringify({
+              routeId: route.id,
+              totalDistance: opt.totalDistance,
+              estimatedDuration: opt.estimatedDuration,
+              deliveries: opt.optimizedDeliveries.map((d: any) => ({
+                id: d.id,
+                sortOrder: d.order,
+                distanceFromPrev: d.distanceFromPrev ?? 0,
+                durationFromPrev: d.durationFromPrev ?? 0,
+                estimatedArrival: d.estimatedArrival,
+              })),
+            }),
+          });
+        } catch (saveErr) {
+          console.error('Failed to persist optimization:', saveErr);
+        }
       }
     } finally {
       set({ isOptimizing: false });
