@@ -64,10 +64,9 @@ export async function GET() {
       completedCount: route.deliveries.filter((d) => d.status === 'completed').length,
     }));
 
-    // Recent deliveries: all deliveries from today's routes, ordered by updatedAt desc, limit 20
+    // Today's deliveries: all from today's routes (no limit — admin view)
     const recentDeliveries = allDeliveries
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .slice(0, 20)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((d) => {
         const route = routes.find((r) => r.id === d.routeId);
         return {

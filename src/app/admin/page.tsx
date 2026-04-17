@@ -116,6 +116,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [driverFilter, setDriverFilter] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async (isRefresh = false) => {
@@ -143,7 +144,9 @@ export default function AdminPage() {
 
   const filteredDeliveries =
     data?.recentDeliveries.filter(
-      (d) => statusFilter === 'all' || d.status === statusFilter
+      (d) =>
+        (statusFilter === 'all' || d.status === statusFilter) &&
+        (driverFilter === 'all' || d.driverId === driverFilter)
     ) ?? [];
 
   const totalDistance = data?.routes.reduce((sum, r) => sum + r.totalDistance, 0) ?? 0;
@@ -323,6 +326,7 @@ export default function AdminPage() {
         {tab === 'drivers' && data && (
           <>
             <DepotInfoCard />
+            <AddDriverCard onAdded={fetchData} />
             {data.drivers.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-sm p-8 text-center text-gray-400">
                 <Users className="w-10 h-10 mx-auto mb-3 text-gray-300" />
@@ -340,31 +344,76 @@ export default function AdminPage() {
         {tab === 'deliveries' && data && (
           <>
             {/* Status filter buttons */}
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {(
-                [
-                  ['all', '전체'],
-                  ['pending', '대기'],
-                  ['in_progress', '배송중'],
-                  ['completed', '완료'],
-                  ['failed', '실패'],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setStatusFilter(key)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                    statusFilter === key
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-600 border border-gray-200'
-                  }`}
-                >
-                  {label}
-                  {key === 'all'
-                    ? ` (${data.recentDeliveries.length})`
-                    : ` (${data.recentDeliveries.filter((d) => d.status === key).length})`}
-                </button>
-              ))}
+            <div className="space-y-2">
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1.5">상태</p>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {(
+                    [
+                      ['all', '전체'],
+                      ['pending', '대기'],
+                      ['in_progress', '배송중'],
+                      ['completed', '완료'],
+                      ['failed', '실패'],
+                    ] as const
+                  ).map(([key, label]) => {
+                    // 기사 필터가 적용된 집합 기준으로 카운트
+                    const base = data.recentDeliveries.filter(
+                      (d) => driverFilter === 'all' || d.driverId === driverFilter
+                    );
+                    const count = key === 'all' ? base.length : base.filter((d) => d.status === key).length;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setStatusFilter(key)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                          statusFilter === key
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-white text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        {label} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Driver filter */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1.5">기사</p>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  <button
+                    onClick={() => setDriverFilter('all')}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                      driverFilter === 'all'
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-white text-gray-600 border border-gray-200'
+                    }`}
+                  >
+                    전체 ({data.recentDeliveries.length})
+                  </button>
+                  {data.drivers
+                    .filter((dr) => dr.hasRouteToday)
+                    .map((dr) => {
+                      const count = data.recentDeliveries.filter((d) => d.driverId === dr.id).length;
+                      return (
+                        <button
+                          key={dr.id}
+                          onClick={() => setDriverFilter(dr.id)}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                            driverFilter === dr.id
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-white text-gray-600 border border-gray-200'
+                          }`}
+                        >
+                          <span>{vehicleEmoji[dr.vehicleType] || '🚗'}</span>
+                          {dr.name} ({count})
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
             </div>
 
             {/* Delivery list */}
@@ -384,10 +433,17 @@ export default function AdminPage() {
                         onClick={() => setExpandedId(isExpanded ? null : d.id)}
                       >
                         <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-mono text-gray-400">
-                            {d.trackingNumber}
-                          </span>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {typeof d.sortOrder === 'number' && (
+                              <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold">
+                                {d.sortOrder}
+                              </span>
+                            )}
+                            <span className="text-xs font-mono text-gray-400 truncate">
+                              {d.trackingNumber}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             <span
                               className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                                 statusStyle[d.status] || 'bg-gray-100 text-gray-600'
@@ -402,12 +458,31 @@ export default function AdminPage() {
                             )}
                           </div>
                         </div>
-                        <p className="font-medium text-gray-900 truncate">{d.address}</p>
-                        <div className="flex justify-between mt-1">
-                          <p className="text-sm text-gray-500">{d.recipientName}</p>
+
+                        {/* 수령인 이름 + 기사 */}
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Users className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <p className="font-semibold text-gray-900 truncate">
+                              {d.recipientName}
+                            </p>
+                          </div>
                           {d.driverName && (
-                            <p className="text-xs text-blue-500">{d.driverName}</p>
+                            <span className="flex-shrink-0 text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                              {d.driverName}
+                            </span>
                           )}
+                        </div>
+
+                        {/* 주소 */}
+                        <div className="flex items-start gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-gray-700 truncate">{d.address}</p>
+                            {d.addressDetail && (
+                              <p className="text-xs text-gray-400 truncate">{d.addressDetail}</p>
+                            )}
+                          </div>
                         </div>
                       </button>
 
@@ -504,13 +579,151 @@ function DepotInfoCard() {
 }
 
 /* ========== Driver Card (종점 편집 포함) ========== */
+/* ========== Add Driver Card ========== */
+function AddDriverCard({ onAdded }: { onAdded: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [vehicleType, setVehicleType] = useState('motorcycle');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch('/api/admin/drivers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, vehicleType, vehicleNumber }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setName(''); setPhone(''); setVehicleNumber(''); setVehicleType('motorcycle');
+        setAdding(false);
+        onAdded();
+      } else {
+        setError(json.error || '등록 실패');
+      }
+    } catch (e: any) {
+      setError(e.message || '네트워크 오류');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!adding) {
+    return (
+      <button
+        onClick={() => setAdding(true)}
+        className="w-full bg-white border-2 border-dashed border-gray-300 hover:border-blue-500 hover:bg-blue-50 rounded-2xl p-4 flex items-center justify-center gap-2 text-gray-500 hover:text-blue-600 transition-colors"
+      >
+        <Users className="w-5 h-5" />
+        <span className="font-medium">+ 새 기사 추가</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3 border-2 border-blue-200">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold flex items-center gap-2">
+          <Users className="w-5 h-5 text-blue-500" />
+          새 기사 등록
+        </h3>
+        <button onClick={() => setAdding(false)} className="text-gray-400">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-gray-500">이름 *</label>
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="김배달"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">전화번호 *</label>
+          <input
+            type="tel"
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            placeholder="010-1234-5678"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">차량 종류</label>
+          <select
+            value={vehicleType}
+            onChange={e => setVehicleType(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none bg-white"
+          >
+            <option value="motorcycle">🏍 오토바이</option>
+            <option value="bicycle">🚲 자전거</option>
+            <option value="car">🚗 승용차</option>
+            <option value="van">🚐 승합차</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">차량 번호</label>
+          <input
+            type="text"
+            value={vehicleNumber}
+            onChange={e => setVehicleNumber(e.target.value)}
+            placeholder="서울 가 1234"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+          />
+        </div>
+      </div>
+
+      {error && <p className="text-xs text-red-500">{error}</p>}
+
+      <div className="flex gap-2">
+        <button
+          onClick={submit}
+          disabled={saving || !name.trim() || !phone.trim()}
+          className="flex-1 flex items-center justify-center gap-1 py-2.5 bg-blue-500 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+        >
+          <Save className="w-4 h-4" />
+          {saving ? '등록 중...' : '기사 등록'}
+        </button>
+        <button
+          onClick={() => setAdding(false)}
+          className="px-4 py-2.5 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium"
+        >
+          취소
+        </button>
+      </div>
+
+      <p className="text-xs text-gray-400">
+        등록 후 기사 카드에서 종점을 설정할 수 있습니다
+      </p>
+    </div>
+  );
+}
+
 function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated: () => void }) {
-  const [editing, setEditing] = useState(false);
+  const [editingHome, setEditingHome] = useState(false);
+  const [editingInfo, setEditingInfo] = useState(false);
   const [address, setAddress] = useState(driver.homeAddress || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const save = async () => {
+  // 기본 정보 수정 상태
+  const [name, setName] = useState(driver.name);
+  const [phone, setPhone] = useState(driver.phone);
+  const [vehicleType, setVehicleType] = useState(driver.vehicleType);
+  const [vehicleNumber, setVehicleNumber] = useState(driver.vehicleNumber);
+
+  const saveHome = async () => {
     setSaving(true);
     setError('');
     try {
@@ -521,7 +734,7 @@ function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated:
       });
       const json = await res.json();
       if (json.success) {
-        setEditing(false);
+        setEditingHome(false);
         onUpdated();
       } else {
         setError(json.error || '저장 실패');
@@ -533,36 +746,179 @@ function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated:
     }
   };
 
-  const cancel = () => {
-    setEditing(false);
+  const cancelHome = () => {
+    setEditingHome(false);
     setAddress(driver.homeAddress || '');
     setError('');
+  };
+
+  const saveInfo = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/admin/drivers/${driver.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, vehicleType, vehicleNumber }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setEditingInfo(false);
+        onUpdated();
+      } else {
+        setError(json.error || '저장 실패');
+      }
+    } catch (e: any) {
+      setError(e.message || '네트워크 오류');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancelInfo = () => {
+    setEditingInfo(false);
+    setName(driver.name);
+    setPhone(driver.phone);
+    setVehicleType(driver.vehicleType);
+    setVehicleNumber(driver.vehicleNumber);
+    setError('');
+  };
+
+  const remove = async () => {
+    const hasData = driver.todayTotal > 0 || driver.hasRouteToday;
+    const msg = hasData
+      ? `${driver.name} 기사를 삭제하시겠습니까?\n\n⚠️ 오늘 ${driver.todayTotal}건의 배송/경로가 함께 삭제됩니다.`
+      : `${driver.name} 기사를 삭제하시겠습니까?`;
+    if (!confirm(msg)) return;
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/drivers/${driver.id}?force=true`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (json.success) {
+        onUpdated();
+      } else {
+        setError(json.error || '삭제 실패');
+      }
+    } catch (e: any) {
+      setError(e.message || '네트워크 오류');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-gray-100">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-            <Users className="w-6 h-6 text-blue-500" />
+        {!editingInfo ? (
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+              <Users className="w-6 h-6 text-blue-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold">{driver.name}</p>
+              <p className="text-sm text-gray-500">
+                {vehicleEmoji[driver.vehicleType] || '🚗'} {driver.vehicleNumber || '(번호 없음)'} · {driver.phone}
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <span
+                className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  driver.isOnline
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-gray-100 text-gray-500'
+                }`}
+              >
+                {driver.isOnline ? '운행중' : '오프라인'}
+              </span>
+              <button
+                onClick={() => setEditingInfo(true)}
+                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                title="기사 정보 수정"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={remove}
+                disabled={saving}
+                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                title="기사 삭제"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold">{driver.name}</p>
-            <p className="text-sm text-gray-500">
-              {vehicleEmoji[driver.vehicleType] || '🚗'} {driver.vehicleNumber}
-            </p>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <Edit2 className="w-4 h-4 text-blue-500" />
+              <p className="text-sm font-medium text-gray-700">기사 정보 수정</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-500">이름</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">전화번호</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">차량 종류</label>
+                <select
+                  value={vehicleType}
+                  onChange={e => setVehicleType(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none bg-white"
+                >
+                  <option value="motorcycle">🏍 오토바이</option>
+                  <option value="bicycle">🚲 자전거</option>
+                  <option value="car">🚗 승용차</option>
+                  <option value="van">🚐 승합차</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">차량 번호</label>
+                <input
+                  type="text"
+                  value={vehicleNumber}
+                  onChange={e => setVehicleNumber(e.target.value)}
+                  placeholder="서울 가 1234"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                />
+              </div>
+            </div>
+            {error && <p className="text-xs text-red-500">{error}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={saveInfo}
+                disabled={saving || !name.trim() || !phone.trim()}
+                className="flex-1 flex items-center justify-center gap-1 py-2 bg-blue-500 text-white rounded-lg text-xs font-medium disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {saving ? '저장 중...' : '저장'}
+              </button>
+              <button
+                onClick={cancelInfo}
+                className="flex items-center justify-center gap-1 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium"
+              >
+                취소
+              </button>
+            </div>
           </div>
-          <span
-            className={`px-2 py-1 rounded-full text-xs font-medium ${
-              driver.isOnline
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-gray-100 text-gray-500'
-            }`}
-          >
-            {driver.isOnline ? '운행중' : '오프라인'}
-          </span>
-        </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -596,9 +952,9 @@ function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated:
             <Home className="w-4 h-4 text-blue-500" />
             <span className="text-xs font-medium text-gray-700">종점 (퇴근지)</span>
           </div>
-          {!editing && (
+          {!editingHome && (
             <button
-              onClick={() => setEditing(true)}
+              onClick={() => setEditingHome(true)}
               className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
             >
               <Edit2 className="w-3 h-3" />
@@ -607,7 +963,7 @@ function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated:
           )}
         </div>
 
-        {!editing ? (
+        {!editingHome ? (
           driver.homeAddress ? (
             <div>
               <p className="text-sm text-gray-900">{driver.homeAddress}</p>
@@ -633,7 +989,7 @@ function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated:
             {error && <p className="text-xs text-red-500">{error}</p>}
             <div className="flex gap-2">
               <button
-                onClick={save}
+                onClick={saveHome}
                 disabled={saving || !address.trim()}
                 className="flex-1 flex items-center justify-center gap-1 py-2 bg-blue-500 text-white rounded-lg text-xs font-medium disabled:opacity-50"
               >
@@ -641,7 +997,7 @@ function DriverCard({ driver, onUpdated }: { driver: DashboardDriver; onUpdated:
                 {saving ? '저장 중...' : '저장'}
               </button>
               <button
-                onClick={cancel}
+                onClick={cancelHome}
                 className="flex items-center justify-center gap-1 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium"
               >
                 <X className="w-3.5 h-3.5" />
