@@ -4,6 +4,7 @@ export type VehicleType = 'motorcycle' | 'bicycle' | 'car' | 'van';
 export interface Package {
   id: string;
   trackingNumber: string;
+  orderNumber?: string | null; // ERP 주문번호
   recipientName: string;
   recipientPhone: string;
   address: string;

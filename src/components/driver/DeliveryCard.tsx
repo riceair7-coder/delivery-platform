@@ -30,11 +30,14 @@ export function DeliveryCard({ delivery, isActive, onClick }: Props) {
     >
       <div className="p-4">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-bold">{delivery.order}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-7 h-7 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">{delivery.order}</span>
             <StatusBadge status={delivery.status} />
+            {pkg.orderNumber && (
+              <span className="text-sm font-bold text-gray-700 truncate">{pkg.orderNumber}</span>
+            )}
           </div>
-          {delivery.status === 'in_progress' && <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded-full">현재 배송지</span>}
+          {delivery.status === 'in_progress' && <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded-full flex-shrink-0">현재 배송지</span>}
         </div>
 
         <div className="flex items-start gap-2 mb-2">

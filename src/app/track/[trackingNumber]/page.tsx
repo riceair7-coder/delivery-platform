@@ -4,6 +4,7 @@ import { Package, MapPin, CheckCircle, Truck, Phone, MessageCircle, Clock, Navig
 
 interface TrackingData {
   trackingNumber: string;
+  orderNumber?: string | null;
   status: string;
   recipientName: string;
   address: string;
@@ -148,7 +149,12 @@ export default function TrackingPage({ params }: { params: Promise<{ trackingNum
           )}
         </div>
         <h1 className="text-2xl font-bold">{data.recipientName}님의 택배</h1>
-        <p className="text-white/60 text-sm font-mono mt-1">{data.trackingNumber}</p>
+        {data.orderNumber && (
+          <p className="text-white/90 text-sm mt-1">
+            주문번호 <span className="font-bold">{data.orderNumber}</span>
+          </p>
+        )}
+        <p className="text-white/60 text-xs font-mono mt-0.5">{data.trackingNumber}</p>
       </div>
 
       <div className="px-4 py-5 space-y-4 max-w-lg mx-auto">

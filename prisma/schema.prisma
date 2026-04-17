@@ -56,6 +56,7 @@ model Delivery {
   routeId         String?
   driverId        String?
   trackingNumber  String   @unique
+  orderNumber     String?  // ERP 주문번호 (예: "14496579") — 수동 배송은 null
   status          String   @default("pending") // pending, in_progress, completed, failed, cancelled
 
   // 배송지 정보

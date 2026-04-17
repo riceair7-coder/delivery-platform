@@ -19,6 +19,10 @@ import {
   Edit2,
   Save,
   X,
+  Search,
+  Calendar,
+  Filter,
+  RotateCcw,
 } from 'lucide-react';
 
 interface DashboardDriver {
@@ -54,6 +58,7 @@ interface DashboardRoute {
 interface RecentDelivery {
   id: string;
   trackingNumber: string;
+  orderNumber: string | null;
   status: string;
   address: string;
   addressDetail: string;
@@ -119,6 +124,15 @@ export default function AdminPage() {
   const [driverFilter, setDriverFilter] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // 검색 상태
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchDateFrom, setSearchDateFrom] = useState(todayStr);
+  const [searchDateTo, setSearchDateTo] = useState(todayStr);
+  const [searchResults, setSearchResults] = useState<any[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchMeta, setSearchMeta] = useState<any>(null);
+
   const fetchData = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true);
@@ -142,12 +156,67 @@ export default function AdminPage() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const filteredDeliveries =
-    data?.recentDeliveries.filter(
-      (d) =>
-        (statusFilter === 'all' || d.status === statusFilter) &&
-        (driverFilter === 'all' || d.driverId === driverFilter)
-    ) ?? [];
+  // 검색 실행 (원격 API)
+  const runSearch = useCallback(async () => {
+    setSearchLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (searchKeyword.trim()) params.set('keyword', searchKeyword.trim());
+      if (searchDateFrom) params.set('dateFrom', searchDateFrom);
+      if (searchDateTo) params.set('dateTo', searchDateTo);
+      if (statusFilter !== 'all') params.set('status', statusFilter);
+      if (driverFilter !== 'all') params.set('driver', driverFilter);
+
+      const res = await fetch(`/api/admin/deliveries?${params.toString()}`);
+      const json = await res.json();
+      if (json.success) {
+        setSearchResults(json.data);
+        setSearchMeta(json.meta);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchKeyword, searchDateFrom, searchDateTo, statusFilter, driverFilter]);
+
+  const resetSearch = () => {
+    setSearchKeyword('');
+    setSearchDateFrom(todayStr);
+    setSearchDateTo(todayStr);
+    setStatusFilter('all');
+    setDriverFilter('all');
+    setSearchResults(null);
+    setSearchMeta(null);
+  };
+
+  // 원격 검색 결과가 있으면 그걸 쓰고, 아니면 오늘 대시보드 데이터 기반 클라이언트 필터
+  const filteredDeliveries = searchResults
+    ? searchResults.map((d) => ({
+        id: d.id,
+        trackingNumber: d.trackingNumber,
+        orderNumber: d.orderNumber ?? null,
+        status: d.status,
+        address: d.address,
+        addressDetail: d.addressDetail || '',
+        recipientName: d.recipientName,
+        recipientPhone: d.recipientPhone,
+        specialInstructions: d.specialInstructions || '',
+        sortOrder: d.sortOrder,
+        completedAt: d.completedAt,
+        proofType: d.proofType,
+        proofData: d.proofData,
+        failureReason: d.failureReason,
+        updatedAt: d.updatedAt,
+        driverName: d.driver?.name ?? null,
+        driverId: d.driver?.id ?? d.driverId ?? null,
+        routeDate: d.route?.date ?? null,
+      }))
+    : (data?.recentDeliveries.filter(
+        (d) =>
+          (statusFilter === 'all' || d.status === statusFilter) &&
+          (driverFilter === 'all' || d.driverId === driverFilter)
+      ) ?? []).map((d) => ({ ...d, routeDate: data?.today ?? null }));
 
   const totalDistance = data?.routes.reduce((sum, r) => sum + r.totalDistance, 0) ?? 0;
   const totalDuration = data?.routes.reduce((sum, r) => sum + r.estimatedDuration, 0) ?? 0;
@@ -169,7 +238,7 @@ export default function AdminPage() {
           <div className="h-8 w-48 bg-gray-700 rounded animate-pulse" />
           <div className="h-4 w-64 bg-gray-700 rounded animate-pulse mt-2" />
         </div>
-        <div className="p-4 space-y-4 max-w-2xl mx-auto">
+        <div className="p-4 space-y-4 max-w-5xl mx-auto">
           <div className="grid grid-cols-2 gap-3">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="bg-white rounded-2xl p-4 h-28 animate-pulse" />
@@ -189,7 +258,7 @@ export default function AdminPage() {
         <div className="bg-gray-900 text-white px-6 pt-12 pb-6">
           <h1 className="text-2xl font-bold">관리자 대시보드</h1>
         </div>
-        <div className="p-4 max-w-2xl mx-auto">
+        <div className="p-4 max-w-5xl mx-auto">
           <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
             <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
             <p className="text-red-700 font-medium">데이터를 불러올 수 없습니다</p>
@@ -210,7 +279,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-gray-900 text-white px-6 pt-12 pb-6">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">관리자 대시보드</h1>
             <p className="text-gray-400 text-sm mt-1">
@@ -239,7 +308,7 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 px-4">
-        <div className="flex gap-1 max-w-2xl mx-auto">
+        <div className="flex gap-1 max-w-5xl mx-auto">
           {([['overview', '개요'], ['drivers', '배송기사'], ['deliveries', '배송현황'], ['erp', 'ERP 연동']] as const).map(
             ([k, l]) => (
               <button
@@ -257,11 +326,11 @@ export default function AdminPage() {
       </div>
 
       {/* Content */}
-      <div className="p-4 space-y-4 max-w-2xl mx-auto">
+      <div className="p-4 space-y-4 max-w-5xl mx-auto">
         {/* ===== Overview Tab ===== */}
         {tab === 'overview' && data && (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {stats.map(({ label, val, Icon, bg, txt, ib }) => (
                 <div key={label} className={`${bg} rounded-2xl p-4`}>
                   <div
@@ -333,9 +402,11 @@ export default function AdminPage() {
                 <p>등록된 기사가 없습니다</p>
               </div>
             ) : (
-              data.drivers.map((driver) => (
-                <DriverCard key={driver.id} driver={driver} onUpdated={fetchData} />
-              ))
+              <div className="space-y-4">
+                {data.drivers.map((driver) => (
+                  <DriverCard key={driver.id} driver={driver} onUpdated={fetchData} />
+                ))}
+              </div>
             )}
           </>
         )}
@@ -343,6 +414,113 @@ export default function AdminPage() {
         {/* ===== Deliveries Tab ===== */}
         {tab === 'deliveries' && data && (
           <>
+            {/* 검색 패널 */}
+            <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Search className="w-5 h-5 text-blue-500" />
+                  배송 검색
+                </h3>
+                {searchResults && (
+                  <button
+                    onClick={resetSearch}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    초기화
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* 키워드 */}
+                <div className="md:col-span-2">
+                  <label className="text-xs text-gray-500 mb-1 block">검색어</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchKeyword}
+                      onChange={e => setSearchKeyword(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') runSearch(); }}
+                      placeholder="주문번호 / 이름 / 전화번호 / 주소 / 추적번호"
+                      className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+                {/* 시작일 */}
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">시작일</label>
+                  <input
+                    type="date"
+                    value={searchDateFrom}
+                    onChange={e => setSearchDateFrom(e.target.value)}
+                    max={searchDateTo}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                  />
+                </div>
+                {/* 종료일 */}
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">종료일</label>
+                  <input
+                    type="date"
+                    value={searchDateTo}
+                    onChange={e => setSearchDateTo(e.target.value)}
+                    min={searchDateFrom}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {/* 빠른 기간 선택 */}
+                <button
+                  onClick={() => { setSearchDateFrom(todayStr); setSearchDateTo(todayStr); }}
+                  className="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200"
+                >
+                  오늘
+                </button>
+                <button
+                  onClick={() => {
+                    const d = new Date(); d.setDate(d.getDate() - 7);
+                    setSearchDateFrom(d.toISOString().split('T')[0]);
+                    setSearchDateTo(todayStr);
+                  }}
+                  className="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200"
+                >
+                  최근 7일
+                </button>
+                <button
+                  onClick={() => {
+                    const d = new Date(); d.setDate(d.getDate() - 30);
+                    setSearchDateFrom(d.toISOString().split('T')[0]);
+                    setSearchDateTo(todayStr);
+                  }}
+                  className="px-3 py-1 text-xs bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200"
+                >
+                  최근 30일
+                </button>
+                <div className="flex-1" />
+                <button
+                  onClick={runSearch}
+                  disabled={searchLoading}
+                  className="px-5 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Search className="w-4 h-4" />
+                  {searchLoading ? '검색 중...' : '검색'}
+                </button>
+              </div>
+
+              {searchMeta && (
+                <p className="text-xs text-gray-500 border-t pt-2">
+                  총 <span className="font-bold text-blue-600">{searchMeta.count}</span>건
+                  {searchMeta.count === searchMeta.limit && ` (최대 ${searchMeta.limit}건까지 표시)`}
+                  {searchMeta.filters.keyword && ` · 키워드 "${searchMeta.filters.keyword}"`}
+                  {searchMeta.filters.dateFrom && ` · ${searchMeta.filters.dateFrom} ~ ${searchMeta.filters.dateTo || searchMeta.filters.dateFrom}`}
+                </p>
+              )}
+            </div>
+
             {/* Status filter buttons */}
             <div className="space-y-2">
               <div>
@@ -357,11 +535,12 @@ export default function AdminPage() {
                       ['failed', '실패'],
                     ] as const
                   ).map(([key, label]) => {
-                    // 기사 필터가 적용된 집합 기준으로 카운트
-                    const base = data.recentDeliveries.filter(
-                      (d) => driverFilter === 'all' || d.driverId === driverFilter
+                    // 검색 결과 있으면 그것 기준, 없으면 오늘 대시보드 기준
+                    const baseList = searchResults || data.recentDeliveries;
+                    const base = baseList.filter(
+                      (d: any) => driverFilter === 'all' || (d.driverId ?? d.driver?.id) === driverFilter
                     );
-                    const count = key === 'all' ? base.length : base.filter((d) => d.status === key).length;
+                    const count = key === 'all' ? base.length : base.filter((d: any) => d.status === key).length;
                     return (
                       <button
                         key={key}
@@ -391,13 +570,15 @@ export default function AdminPage() {
                         : 'bg-white text-gray-600 border border-gray-200'
                     }`}
                   >
-                    전체 ({data.recentDeliveries.length})
+                    전체 ({(searchResults || data.recentDeliveries).length})
                   </button>
-                  {data.drivers
-                    .filter((dr) => dr.hasRouteToday)
-                    .map((dr) => {
-                      const count = data.recentDeliveries.filter((d) => d.driverId === dr.id).length;
-                      return (
+                  {data.drivers.map((dr) => {
+                    const baseList: any[] = searchResults || data.recentDeliveries;
+                    const count = baseList.filter((d: any) =>
+                      (d.driverId ?? d.driver?.id) === dr.id
+                    ).length;
+                    if (!searchResults && count === 0) return null; // 오늘 기준일 때만 0 숨김
+                    return (
                         <button
                           key={dr.id}
                           onClick={() => setDriverFilter(dr.id)}
@@ -420,7 +601,7 @@ export default function AdminPage() {
             {filteredDeliveries.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-sm p-8 text-center text-gray-400">
                 <Package className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                <p>해당 상태의 배송이 없습니다</p>
+                <p>해당 조건의 배송이 없습니다</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -439,9 +620,27 @@ export default function AdminPage() {
                                 {d.sortOrder}
                               </span>
                             )}
-                            <span className="text-xs font-mono text-gray-400 truncate">
-                              {d.trackingNumber}
-                            </span>
+                            <div className="min-w-0 flex items-baseline gap-1.5">
+                              {d.orderNumber ? (
+                                <>
+                                  <span className="text-sm font-bold text-gray-900">
+                                    {d.orderNumber}
+                                  </span>
+                                  <span className="text-[10px] text-gray-300 font-mono truncate hidden sm:inline">
+                                    {d.trackingNumber}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-xs font-mono text-gray-400 truncate">
+                                  {d.trackingNumber}
+                                </span>
+                              )}
+                              {searchResults && (d as any).routeDate && (
+                                <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                  {(d as any).routeDate}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span

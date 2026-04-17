@@ -155,6 +155,7 @@ export async function POST(request: NextRequest) {
           routeId: route.id,
           driverId,
           trackingNumber,
+          orderNumber: erp.id, // ERP 주문번호 저장
           status: 'pending',
           address: erp.address,
           addressDetail: erp.address_detail || '',

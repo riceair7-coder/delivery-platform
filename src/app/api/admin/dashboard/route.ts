@@ -72,6 +72,7 @@ export async function GET() {
         return {
           id: d.id,
           trackingNumber: d.trackingNumber,
+          orderNumber: d.orderNumber,
           status: d.status,
           address: d.address,
           addressDetail: d.addressDetail,

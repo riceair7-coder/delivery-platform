@@ -37,6 +37,7 @@ export async function GET(
 
     const data: Record<string, unknown> = {
       trackingNumber: delivery.trackingNumber,
+      orderNumber: delivery.orderNumber,
       status: delivery.status,
       recipientName: delivery.recipientName,
       address: delivery.address,

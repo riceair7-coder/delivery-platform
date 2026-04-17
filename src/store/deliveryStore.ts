@@ -46,6 +46,7 @@ function toDeliveryItem(d: any): DeliveryItem {
     package: {
       id: d.id,
       trackingNumber: d.trackingNumber,
+      orderNumber: d.orderNumber || undefined,
       recipientName: d.recipientName,
       recipientPhone: d.recipientPhone,
       address: d.address,

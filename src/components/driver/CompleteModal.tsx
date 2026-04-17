@@ -50,6 +50,9 @@ export function CompleteModal({ deliveryId, onClose }: { deliveryId: string; onC
           <button onClick={onClose}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-3 bg-gray-50 rounded-lg mb-4">
+          {delivery.package.orderNumber && (
+            <p className="text-xs text-blue-600 font-bold mb-1">주문번호 {delivery.package.orderNumber}</p>
+          )}
           <p className="font-medium">{delivery.package.address}</p>
           <p className="text-sm text-gray-500">{delivery.package.recipientName}</p>
         </div>
